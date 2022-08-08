@@ -15,6 +15,7 @@ import time
 import pyarrow
 import torch
 from torch.utils.data import DataLoader
+from scripts.utils.falign import Wave2Vec2Aligner
 
 import utils
 from data_loader.lmdb_data_loader import SpeechMotionDataset, default_collate_fn, word_seq_collate_fn
@@ -24,13 +25,10 @@ from utils.data_utils import extract_melspectrogram, remove_tags_marks, convert_
 from utils.train_utils import create_video_and_save, set_logger
 from utils.tts_helper import TTSHelper
 
-sys.path.insert(0, '../../gentle')
-import gentle
 
 from data_loader.data_preprocessor import DataPreprocessor
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-gentle_resources = gentle.Resources()
 
 
 def generate_gestures(args, pose_decoder, lang_model, audio, words, audio_sr=16000, vid=None,
@@ -215,16 +213,11 @@ def align_words(audio, text):
     wave_file = 'output/temp.wav'
     sf.write(wave_file, audio_8k, 8000, 'PCM_16')
 
-    # run gentle to align words
-    aligner = gentle.ForcedAligner(gentle_resources, text, nthreads=2, disfluency=False,
-                                   conservative=False)
-    gentle_out = aligner.transcribe(wave_file, logging=logging)
+    aligner = Wave2Vec2Aligner()
+    aligner_out = aligner.align_audio(wave_file, text)
     words_with_timestamps = []
-    for i, gentle_word in enumerate(gentle_out.words):
-        if gentle_word.case == 'success':
-            words_with_timestamps.append([gentle_word.word, gentle_word.start, gentle_word.end])
-        elif 0 < i < len(gentle_out.words) - 1:
-            words_with_timestamps.append([gentle_word.word, gentle_out.words[i-1].end, gentle_out.words[i+1].start])
+    for word in aligner_out:
+        words_with_timestamps.append([word.data, word.start, word.end])
 
     return words_with_timestamps
 
